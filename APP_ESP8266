@@ -1,0 +1,114 @@
+package com.example.esp8266flasher
+
+import android.hardware.usb.UsbDevice
+import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import com.example.esp8266flasher.ui.theme.ESP8266FlasherTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            ESP8266FlasherTheme {
+                MainScreen()
+            }
+        }
+    }
+}
+
+@Composable
+fun MainScreen() {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        val context = LocalContext.current
+
+        // Dropdown for selecting ESP8266 connection method
+        val connectionMethods = listOf("USB", "Wi-Fi OTA")
+        var selectedMethod by remember { mutableStateOf(connectionMethods[0]) }
+
+        Text(text = "Select Connection Method:")
+        DropdownMenu(expanded = true, onDismissRequest = {}) {
+            connectionMethods.forEach { method ->
+                DropdownMenuItem(onClick = { selectedMethod = method }) {
+                    Text(method)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Button to select .bin file
+        var selectedFile by remember { mutableStateOf<File?>(null) }
+        val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            uri?.let {
+                val path = uri.path
+                selectedFile = File(path!!)
+                Toast.makeText(context, "Selected: ${selectedFile?.name}", Toast.LENGTH_SHORT).show()
+            }
+        }
+        Button(onClick = { launcher.launch("*/*") }) {
+            Text("Select Firmware (.bin)")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Upload button
+        Button(onClick = {
+            selectedFile?.let {
+                if (selectedMethod == "USB") {
+                    flashViaUSB(it)
+                } else {
+                    flashViaWiFi(it)
+                }
+            } ?: Toast.makeText(context, "No file selected", Toast.LENGTH_SHORT).show()
+        }) {
+            Text("Upload to ESP8266")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Serial Monitor
+        Text(text = "Serial Monitor:")
+        Text(text = "[Logs will appear here]", modifier = Modifier.padding(8.dp))
+    }
+}
+
+fun flashViaUSB(file: File) {
+    CoroutineScope(Dispatchers.IO).launch {
+        // Implement USB flashing using UsbSerial & Esptool
+        println("Flashing via USB: ${file.name}")
+    }
+}
+
+fun flashViaWiFi(file: File) {
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            val url = URL("http://esp8266.local/update")
+            val connection = url.openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/octet-stream")
+            connection.outputStream.use { outputStream ->
+                file.inputStream().copyTo(outputStream)
+            }
+            val response = connection.responseCode
+            println("OTA Upload Response: $response")
+        } catch (e: Exception) {
+            println("Error during OTA upload: ${e.message}")
+        }
+    }
+}
